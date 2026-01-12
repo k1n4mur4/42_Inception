@@ -7,6 +7,7 @@ services:
       - wordpress_data:/var/www/html/wordpress
     depends_on:
       - wordpress
+    restart: always
 
   wordpress:
     build: ./requirements/wordpress
@@ -19,6 +20,7 @@ services:
       - MYSQL_PASSWORD=${MYSQL_PASSWORD}
     depends_on:
       - mariadb
+    restart: always
 
   mariadb:
     build: ./requirements/mariadb
@@ -28,6 +30,7 @@ services:
       - MYSQL_DATABASE=${MYSQL_DATABASE}
       - MYSQL_USER=${MYSQL_USER}
       - MYSQL_PASSWORD=${MYSQL_PASSWORD}
+    restart: always
 
 volumes:
   wordpress_data:

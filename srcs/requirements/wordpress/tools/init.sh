@@ -2,6 +2,11 @@
 
 cd /var/www/html/wordpress
 
+# secrets
+MYSQL_PASSWORD=$(cat /run/secrets/db_password)
+WP_ADMIN_PASSWORD=$(cat /run/secrets/wp_admin_password)
+WP_USER_PASSWORD=$(cat /run/secrets/wp_user_password)
+
 # wp-config.php
 if [ ! -f wp-config.php ]; then
 	cat > wp-config.php << EOF
@@ -21,7 +26,6 @@ require_once ABSPATH . 'wp-settings.php';
 EOF
 	chown www-data:www-data wp-config.php
 
-	# sleep to wake up mariadb
 	while ! mysqladmin ping -h mariadb --silent; do
 		sleep 1
 	done

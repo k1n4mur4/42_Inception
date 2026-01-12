@@ -58,4 +58,3 @@ AI was used to assist with understanding Docker concepts and debugging configura
 - **Docker Volumes**: Managed by Docker, stored in Docker's internal location
 - **Bind Mounts**: User specifies exact host path
 - Bind Mounts give more control over data location
-EOF

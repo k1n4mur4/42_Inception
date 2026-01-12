@@ -12,6 +12,11 @@ services:
     build: ./wordpress
     volumes:
       - wordpress_data:/var/www/html/wordpress
+    environment:
+      - MYSQL_HOST=mariadb
+      - MYSQL_DATABASE=${MYSQL_DATABASE}
+      - MYSQL_USER=${MYSQL_USER}
+      - MYSQL_PASSWORD=${MYSQL_PASSWORD}
     depends_on:
       - mariadb
 
@@ -19,6 +24,10 @@ services:
     build: ./mariadb
     volumes:
       - mariadb_data:/var/lib/mysql
+    environment:
+      - MYSQL_DATABASE=${MYSQL_DATABASE}
+      - MYSQL_USER=${MYSQL_USER}
+      - MYSQL_PASSWORD=${MYSQL_PASSWORD}
 
 volumes:
   wordpress_data:

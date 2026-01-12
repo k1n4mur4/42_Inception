@@ -1,0 +1,29 @@
+services:
+  nginx:
+    build: ./nginx
+    ports:
+      - "443:443"
+    volumes:
+      - wordpress_data:/var/www/html/wordpress
+    depends_on:
+      - wordpress
+
+  wordpress:
+    build: ./wordpress
+    volumes:
+      - wordpress_data:/var/www/html/wordpress
+    depends_on:
+      - mariadb
+
+  mariadb:
+    build: ./mariadb
+    volumes:
+      - mariadb_data:/var/lib/mysql
+
+volumes:
+  wordpress_data:
+  mariadb_data:
+
+networks:
+  default:
+    driver: bridge

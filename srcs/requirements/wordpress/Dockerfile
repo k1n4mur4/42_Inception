@@ -5,6 +5,7 @@ RUN apt update && apt install -y \
     php-mysql \
     curl \
     mariadb-client \
+    netcat-openbsd \
     && mkdir -p /run/php \
     && mkdir -p /var/www/html
 

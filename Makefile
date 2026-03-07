@@ -11,13 +11,23 @@ endif
 NAME		:= inception
 DOCKER		:= docker
 COMPOSE		:= docker compose
-RM		:= rm -rf
+RM			:= rm -rf
 
 #? Compose Configuration
 COMPOSE_FILE	:= srcs/docker-compose.yml
-ENV_FILE	:= srcs/.env
+ENV_FILE		:= srcs/.env
 COMPOSE_FLAGS	:= -f $(COMPOSE_FILE)
-SERVICES	:= nginx wordpress mariadb
+SERVICES		:= nginx wordpress mariadb
+
+#? SCP
+SCP			:=	scp
+SEND_USER	:=	$(shell whoami)
+SEND_FILE	:=	../42_Inception
+SEND_DIR	:=	Document
+SEND_DEST	:=	/home/$(SEND_USER)/$(SEND_DIR)/
+SEND_TO		:=	127.0.0.1
+SEND_PORT	:=	2222
+SEND_FLAGS	:=	-r -C -P $(SEND_PORT) -o StrictHostKeyChecking=no
 
 #? Git and Docker info
 GIT_COMMIT	:= $(shell git rev-parse --short HEAD 2>/dev/null || echo "")
@@ -68,7 +78,7 @@ info:
 	@printf "\033[1;94mCOMPOSE      \033[1;94m:| \033[0m$(COMPOSE) \033[1;94m(\033[97m$(COMPOSE_VERSION)\033[94m)\n"
 	@printf "\033[1;91mCOMPOSE_FILE \033[1;91m!| \033[0m$(COMPOSE_FILE)\n"
 	@printf "\033[1;95mSERVICES     \033[1;94m:| \033[0m$(SERVICES)\n"
-	@printf "\033[1;96mTHREADS      \033[1;94m:| \033[0m$(THREADS)\n"
+	@printf "\033[1;96mTHREAdylanaraps/neofetchDS      \033[1;94m:| \033[0m$(THREADS)\n"
 	@printf "\n\033[1;92mBuilding $(NAME) \033[91m(\033[97m$(GIT_COMMIT)\033[91m) \033[93m$(PLATFORM) \033[96m$(ARCH)\033[0m\n\n"
 else
 info:
@@ -116,10 +126,20 @@ clean:
 	@printf "\033[1;91mRemoving: \033[1;97mservices and volumes...\033[0m\n"
 	@$(COMPOSE) $(COMPOSE_FLAGS) down -v $(SUPPRESS) || true
 	@printf "\033[1;92mClean complete.\033[0m\n"
-
+	@printf "\033[1;94mSending:  \033[1;97m$(SEND_FILE)\033[0m\n"
+	@printf "\033[1;94mTo:       \033[1;97m$(SEND_USER)@$(SEND_TO):$(SEND_PORT) -> $(SEND_DEST)\033[0m\n\n"
+	@$(SCP) $(SEND_FLAGS) $(SEND_FILE) $(SEND_USER)@$(SEND_TO):$(SEND_DEST) \
+		&& printf "\033[1;92mTransfer complete.\033[0m\n" \
+		|| { printf "\033[1;91mTransfer failed.\033[0m\n"; exit 1; }
 #? Full clean (volumes + images + prune)
 fclean: clean
-	@printf "\033[1;91mRemoving: \033[1;97mimages...\033[0m\n"
+	@printf "\033[1;91send:
+	@printf "\033[1;94mSending: \033[1;97m$(SEND_FILE)\033[0m\n"
+	@printf "\033[1;94mFrom:    \033[1;97m$(SEND_FROM)\033[0m\n"
+	@printf "\033[1;94mTo:      \033[1;97m$(SEND_USER)@$(SEND_TO):$(SEND_DEST)\033[0m\n\n"
+	@$(SCP) $(SEND_FLAGS) $(SEND_FILE) $(SEND_USER)@$(SEND_TO):$(SEND_DEST) \
+		&& printf "\033[1;92mTransfer complete.\033[0m\n" \
+		|| { printf "\033[1;91mTransfer failed.\033[0m\n"; exit 1; }mRemoving: \033[1;97mimages...\033[0m\n"
 	@$(COMPOSE) $(COMPOSE_FLAGS) down --rmi all $(SUPPRESS) || true
 	@printf "\033[1;91mPruning: \033[1;97munused Docker resources...\033[0m\n"
 	@$(DOCKER) system prune -f $(SUPPRESS) || true
@@ -138,5 +158,13 @@ status:
 	@printf " $(BANNER)\n"
 	@$(COMPOSE) $(COMPOSE_FLAGS) ps
 
+#? Send file
+send:
+	@printf "\033[1;94mSending:  \033[1;97m$(SEND_FILE)\033[0m\n"
+	@printf "\033[1;94mTo:       \033[1;97m$(SEND_USER)@$(SEND_TO):$(SEND_PORT) -> $(SEND_DEST)\033[0m\n\n"
+	@$(SCP) $(SEND_FLAGS) $(SEND_FILE) $(SEND_USER)@$(SEND_TO):$(SEND_DEST) \
+		&& printf "\033[1;92mTransfer complete.\033[0m\n" \
+		|| { printf "\033[1;91mTransfer failed.\033[0m\n"; exit 1; }
+
 #? Non-File Targets
-.PHONY: all info help build down clean fclean re logs status
+.PHONY: all info help build down clean fclean re logs status send

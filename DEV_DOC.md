@@ -2,59 +2,105 @@
 
 ## Prerequisites
 
-- Docker Engine 20.10+
-- Docker Compose 2.0+
-- Make
+- Debian-based virtual machine (Debian 12+ recommended)
+- Docker Engine 24+
+- Docker Compose v2+ (`docker compose`, not `docker-compose`)
+- GNU Make
 - Git
+- Host entry for `kinamura.42.fr` pointing to `127.0.0.1`
 
 ## Setting Up from Scratch
 
 ### 1. Clone the repository
 ```bash
-git clone <repository-url>
+git clone <repository-url> inception
 cd inception
 ```
 
-### 2. Create secrets files
+### 2. Configure the host
+
+Add the domain to `/etc/hosts`:
 ```bash
-mkdir -p secrets
-echo "your_db_password" > secrets/db_password.txt
-echo "your_root_password" > secrets/db_root_password.txt
-echo "your_wp_admin_password" > secrets/wp_admin_password.txt
-echo "your_wp_user_password" > secrets/wp_user_password.txt
+echo "127.0.0.1 kinamura.42.fr" | sudo tee -a /etc/hosts
 ```
 
-### 3. Configure environment variables
+Create the data directory used by the bind-mounted named volumes:
+```bash
+mkdir -p /home/kinamura/data/wordpress /home/kinamura/data/mariadb
+```
+(The `make` target also does this automatically via the `setup` rule.)
+
+### 3. Create secrets files
+
+All secrets live in the top-level `secrets/` directory and are ignored by Git.
+
+```bash
+mkdir -p secrets
+
+# MariaDB passwords (single value per file, no trailing newline)
+printf 'YOUR_DB_PASSWORD' > secrets/db_password.txt
+printf 'YOUR_DB_ROOT_PASSWORD' > secrets/db_root_password.txt
+
+# WordPress passwords (KEY=VALUE format, one per line)
+cat > secrets/credentials.txt << 'EOF'
+WP_ADMIN_PASSWORD=YOUR_WP_ADMIN_PASSWORD
+WP_USER_PASSWORD=YOUR_WP_USER_PASSWORD
+EOF
+
+# Restrict permissions
+chmod 600 secrets/*.txt
+```
+
+### 4. Configure environment variables
 
 Create `srcs/.env`:
 ```env
-DOMAIN_NAME=login.42.fr
+# Domain
+DOMAIN_NAME=kinamura.42.fr
 
+# MariaDB configuration
 MYSQL_DATABASE=wordpress
 MYSQL_USER=wpuser
 
-WP_ADMIN_USER=your_login
-WP_ADMIN_EMAIL=your_email@example.com
-WP_USER=user
-WP_USER_EMAIL=user@example.com
-```
+# WordPress admin (must NOT contain 'admin' or 'administrator')
+WP_ADMIN_USER=kinamura
+WP_ADMIN_EMAIL=kinamura@student.42tokyo.jp
 
-### 4. Configure hosts file (VM only)
-```bash
-sudo echo "127.0.0.1 login.42.fr" >> /etc/hosts
+# WordPress second user (non-admin)
+WP_USER=bob
+WP_USER_EMAIL=bob@example.com
 ```
 
 ## Building and Launching
 
-### Build and start
+### Build and start everything
 ```bash
 make
 ```
+
+This will:
+1. Create `/home/kinamura/data/{wordpress,mariadb}` if missing (`setup` rule)
+2. Build Docker images for `nginx`, `wordpress`, and `mariadb`
+3. Start all containers detached
 
 ### Rebuild from scratch
 ```bash
 make re
 ```
+
+### Other Makefile targets
+
+| Target      | Description                                                |
+|-------------|------------------------------------------------------------|
+| `make`      | Default: `info` + `build` + `up`                          |
+| `make build`| Build images only                                          |
+| `make up`   | Start already-built images                                 |
+| `make down` | Stop containers (preserves volumes and images)             |
+| `make clean`| Stop containers and remove volumes                         |
+| `make fclean`| `clean` + remove images, host data at `/home/kinamura/data`, and prune |
+| `make logs` | Follow aggregated logs                                     |
+| `make status`| List containers and their state                           |
+| `make help` | Show available targets                                     |
 
 ## Managing Containers and Volumes
 
@@ -63,12 +109,12 @@ make re
 docker compose -f srcs/docker-compose.yml ps
 ```
 
-### View all containers (including stopped)
+### View all containers (including exited)
 ```bash
 docker compose -f srcs/docker-compose.yml ps -a
 ```
 
-### Access container shell
+### Access a container shell
 ```bash
 docker compose -f srcs/docker-compose.yml exec nginx bash
 docker compose -f srcs/docker-compose.yml exec wordpress bash
@@ -78,35 +124,40 @@ docker compose -f srcs/docker-compose.yml exec mariadb bash
 ### View logs
 ```bash
 docker compose -f srcs/docker-compose.yml logs -f
+docker compose -f srcs/docker-compose.yml logs nginx
 ```
 
-### Stop containers
+### Stop everything
 ```bash
 make down
 ```
 
-### Stop and remove volumes
+### Remove volumes (data also in host path is kept)
 ```bash
 make clean
 ```
 
-### List volumes
+### List Docker volumes
 ```bash
 docker volume ls
 ```
+
+You should see `srcs_wordpress_data` and `srcs_mariadb_data`.
 
 ## Data Storage
 
 ### Volumes
 
-| Volume | Purpose | Container Path |
-|--------|---------|----------------|
-| wordpress_data | WordPress files | /var/www/html/wordpress |
-| mariadb_data | Database files | /var/lib/mysql |
+Two named volumes are bound to directories on the host, so data survives
+container recreation even if the Docker volume is removed.
 
-### For production (VM)
+| Volume             | Container mount path          | Host path                         | Purpose                    |
+|--------------------|-------------------------------|-----------------------------------|----------------------------|
+| `wordpress_data`   | `/var/www/html/wordpress`     | `/home/kinamura/data/wordpress`   | WordPress site files       |
+| `mariadb_data`     | `/var/lib/mysql`              | `/home/kinamura/data/mariadb`     | MariaDB data files         |
 
-Volumes should be mapped to `/home/login/data`:
+### docker-compose volume definition
+
 ```yaml
 volumes:
   wordpress_data:
@@ -114,33 +165,25 @@ volumes:
     driver_opts:
       type: none
       o: bind
-      device: /home/login/data/wordpress
+      device: /home/kinamura/data/wordpress
 
   mariadb_data:
     driver: local
     driver_opts:
       type: none
       o: bind
-      device: /home/login/data/mariadb
+      device: /home/kinamura/data/mariadb
 ```
 
+### Inspecting data on the host
+
+```bash
+ls -la /home/kinamura/data/wordpress
+ls -la /home/kinamura/data/mariadb
+```
+
+Because MariaDB writes files as its own `mysql` user, some files in
+`/home/kinamura/data/mariadb` will be owned by `systemd-coredump` or a numeric
+UID on the host. This is expected with bind-mounted volumes.
+
 ## Project Structure
-```
-.
-├── Makefile
-├── README.md
-├── USER_DOC.md
-├── DEV_DOC.md
-├── secrets/
-│   ├── db_password.txt
-│   ├── db_root_password.txt
-│   ├── wp_admin_password.txt
-│   └── wp_user_password.txt
-└── srcs/
-    ├── docker-compose.yml
-    ├── .env
-    └── requirements/
-        ├── mariadb/
-        ├── nginx/
-        └── wordpress/
-```

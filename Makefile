@@ -11,23 +11,13 @@ endif
 NAME		:= inception
 DOCKER		:= docker
 COMPOSE		:= docker compose
-RM			:= rm -rf
+RM		:= rm -rf
 
 #? Compose Configuration
 COMPOSE_FILE	:= srcs/docker-compose.yml
-ENV_FILE		:= srcs/.env
+ENV_FILE	:= srcs/.env
 COMPOSE_FLAGS	:= -f $(COMPOSE_FILE)
-SERVICES		:= nginx wordpress mariadb
-
-#? SCP
-SCP			:=	scp
-SEND_USER	:=	$(shell whoami)
-SEND_FILE	:=	../42_Inception
-SEND_DIR	:=	Document
-SEND_DEST	:=	/home/$(SEND_USER)/$(SEND_DIR)/
-SEND_TO		:=	127.0.0.1
-SEND_PORT	:=	2222
-SEND_FLAGS	:=	-r -C -P $(SEND_PORT) -o StrictHostKeyChecking=no
+SERVICES	:= nginx wordpress mariadb
 
 #? Git and Docker info
 GIT_COMMIT	:= $(shell git rev-parse --short HEAD 2>/dev/null || echo "")
@@ -40,10 +30,14 @@ ARCH		?= $(shell uname -m || echo unknown)
 ifeq ($(shell uname -s),Darwin)
 	PLATFORM	:= macOS
 	THREADS		:= $(shell sysctl -n hw.ncpu || echo 1)
+	DATA_DIR	:= $(HOME)/tmp/data
 else
 	PLATFORM	:= $(shell uname -s || echo unknown)
 	THREADS		:= $(shell getconf _NPROCESSORS_ONLN 2>/dev/null || echo 1)
+	DATA_DIR	:= /home/kinamura/data
 endif
+
+export DATA_DIR
 
 #? Setup
 SERVICE_COUNT	:= $(words $(SERVICES))
@@ -51,20 +45,15 @@ P		:= %%
 MAKEFLAGS	+= --no-print-directory
 
 ifeq ($(VERBOSE),true)
-	override VERBOSE := false
-else
-	override VERBOSE := true
-endif
-
-ifeq ($(VERBOSE),true)
-	override SUPPRESS := > /dev/null 2> /dev/null
-else
 	override SUPPRESS :=
+else
+	override VERBOSE := false
+	override SUPPRESS := > /dev/null 2> /dev/null
 endif
 
 #? Default Make
 .ONESHELL:
-all: | info build
+all: | info build up
 	@ELAPSED=$$(expr $$(date +%s 2>/dev/null || echo "0") - $(TIMESTAMP)); \
 	printf "\n\033[1;92mAll services up in \033[92m(\033[97m%dm:%02ds\033[92m)\033[0m\n" \
 	$$((ELAPSED / 60)) $$((ELAPSED % 60))
@@ -78,7 +67,7 @@ info:
 	@printf "\033[1;94mCOMPOSE      \033[1;94m:| \033[0m$(COMPOSE) \033[1;94m(\033[97m$(COMPOSE_VERSION)\033[94m)\n"
 	@printf "\033[1;91mCOMPOSE_FILE \033[1;91m!| \033[0m$(COMPOSE_FILE)\n"
 	@printf "\033[1;95mSERVICES     \033[1;94m:| \033[0m$(SERVICES)\n"
-	@printf "\033[1;96mTHREAdylanaraps/neofetchDS      \033[1;94m:| \033[0m$(THREADS)\n"
+	@printf "\033[1;96mTHREADS      \033[1;94m:| \033[0m$(THREADS)\n"
 	@printf "\n\033[1;92mBuilding $(NAME) \033[91m(\033[97m$(GIT_COMMIT)\033[91m) \033[93m$(PLATFORM) \033[96m$(ARCH)\033[0m\n\n"
 else
 info:
@@ -100,20 +89,27 @@ help:
 	@printf "  \033[1minfo\033[0m         Display build information\n"
 	@printf "  \033[1mhelp\033[0m         Show this help message\n"
 
+#? Create host directories for volumes
+setup:
+	@mkdir -p $(DATA_DIR)/wordpress
+	@mkdir -p $(DATA_DIR)/mariadb
+
 #? Build services
 .ONESHELL:
-build:
+build: setup
 	@$(QUIET) || printf "\033[1;92mBuilding images\033[37m...\033[0m\n"
 	@$(VERBOSE) || printf "$(COMPOSE) $(COMPOSE_FLAGS) build\n"
 	@$(COMPOSE) $(COMPOSE_FLAGS) build || exit 1
-	@printf "\033[1;92m 33$(P) -> \033[1;37mimages built\033[0m\n"
+	@printf "\033[1;92mImages built.\033[0m\n"
+
+#? Start services
+.ONESHELL:
+up:
 	@$(QUIET) || printf "\033[1;92mStarting services\033[37m...\033[0m\n"
 	@$(VERBOSE) || printf "$(COMPOSE) $(COMPOSE_FLAGS) up -d\n"
 	@$(COMPOSE) $(COMPOSE_FLAGS) up -d $(SUPPRESS) || exit 1
-	@printf "\033[1;92m 66$(P) -> \033[1;37mservices started\033[0m\n"
-	@$(QUIET) || printf "\033[1;92mVerifying status\033[37m...\033[0m\n"
 	@$(COMPOSE) $(COMPOSE_FLAGS) ps $(SUPPRESS) || true
-	@printf "\033[1;92m100$(P) -> \033[1;37m$(NAME) ready \033[1;93m(\033[1;97m$(SERVICE_COUNT) services\033[1;93m)\033[0m\n"
+	@printf "\033[1;92m$(NAME) ready \033[1;93m(\033[1;97m$(SERVICE_COUNT) services\033[1;93m)\033[0m\n"
 
 #? Stop services
 down:
@@ -125,24 +121,15 @@ down:
 clean:
 	@printf "\033[1;91mRemoving: \033[1;97mservices and volumes...\033[0m\n"
 	@$(COMPOSE) $(COMPOSE_FLAGS) down -v $(SUPPRESS) || true
+	@sudo rm -rf $(DATA_DIR)
 	@printf "\033[1;92mClean complete.\033[0m\n"
-	@printf "\033[1;94mSending:  \033[1;97m$(SEND_FILE)\033[0m\n"
-	@printf "\033[1;94mTo:       \033[1;97m$(SEND_USER)@$(SEND_TO):$(SEND_PORT) -> $(SEND_DEST)\033[0m\n\n"
-	@$(SCP) $(SEND_FLAGS) $(SEND_FILE) $(SEND_USER)@$(SEND_TO):$(SEND_DEST) \
-		&& printf "\033[1;92mTransfer complete.\033[0m\n" \
-		|| { printf "\033[1;91mTransfer failed.\033[0m\n"; exit 1; }
+
 #? Full clean (volumes + images + prune)
 fclean: clean
-	@printf "\033[1;91send:
-	@printf "\033[1;94mSending: \033[1;97m$(SEND_FILE)\033[0m\n"
-	@printf "\033[1;94mFrom:    \033[1;97m$(SEND_FROM)\033[0m\n"
-	@printf "\033[1;94mTo:      \033[1;97m$(SEND_USER)@$(SEND_TO):$(SEND_DEST)\033[0m\n\n"
-	@$(SCP) $(SEND_FLAGS) $(SEND_FILE) $(SEND_USER)@$(SEND_TO):$(SEND_DEST) \
-		&& printf "\033[1;92mTransfer complete.\033[0m\n" \
-		|| { printf "\033[1;91mTransfer failed.\033[0m\n"; exit 1; }mRemoving: \033[1;97mimages...\033[0m\n"
+	@printf "\033[1;91mRemoving: \033[1;97mimages...\033[0m\n"
 	@$(COMPOSE) $(COMPOSE_FLAGS) down --rmi all $(SUPPRESS) || true
 	@printf "\033[1;91mPruning: \033[1;97munused Docker resources...\033[0m\n"
-	@$(DOCKER) system prune -f $(SUPPRESS) || true
+	@$(DOCKER) system prune -af $(SUPPRESS) || true
 	@printf "\033[1;92mFull clean complete.\033[0m\n"
 
 #? Rebuild
@@ -158,13 +145,5 @@ status:
 	@printf " $(BANNER)\n"
 	@$(COMPOSE) $(COMPOSE_FLAGS) ps
 
-#? Send file
-send:
-	@printf "\033[1;94mSending:  \033[1;97m$(SEND_FILE)\033[0m\n"
-	@printf "\033[1;94mTo:       \033[1;97m$(SEND_USER)@$(SEND_TO):$(SEND_PORT) -> $(SEND_DEST)\033[0m\n\n"
-	@$(SCP) $(SEND_FLAGS) $(SEND_FILE) $(SEND_USER)@$(SEND_TO):$(SEND_DEST) \
-		&& printf "\033[1;92mTransfer complete.\033[0m\n" \
-		|| { printf "\033[1;91mTransfer failed.\033[0m\n"; exit 1; }
-
 #? Non-File Targets
-.PHONY: all info help build down clean fclean re logs status send
+.PHONY: all info help setup build up down clean fclean re logs status

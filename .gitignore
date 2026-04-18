@@ -9,3 +9,12 @@ result-*
 .direnv
 
 .env
+
+# SQL files (should never contain plaintext credentials)
+*.sql
+
+# SSL certificates (generated at build time)
+**/ssl/
+*.key
+*.crt
+*.pem

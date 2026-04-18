@@ -1,7 +1,6 @@
 services:
   nginx:
     build: ./requirements/nginx
-    container_name: nginx
     image: nginx
     ports:
       - "443:443"
@@ -9,16 +8,14 @@ services:
       - wordpress_data:/var/www/html/wordpress
     depends_on:
       - wordpress
-    networks:
-      - inception
     restart: always
 
   wordpress:
     build: ./requirements/wordpress
-    container_name: wordpress
     image: wordpress
     volumes:
       - wordpress_data:/var/www/html/wordpress
+      - ./requirements/tools:/tools
     environment:
       - MYSQL_HOST=mariadb
       - MYSQL_DATABASE=${MYSQL_DATABASE}
@@ -33,13 +30,10 @@ services:
       - credentials
     depends_on:
       - mariadb
-    networks:
-      - inception
     restart: always
 
   mariadb:
     build: ./requirements/mariadb
-    container_name: mariadb
     image: mariadb
     volumes:
       - mariadb_data:/var/lib/mysql
@@ -49,8 +43,6 @@ services:
     secrets:
       - db_password
       - db_root_password
-    networks:
-      - inception
     restart: always
 
 volumes:
@@ -59,17 +51,16 @@ volumes:
     driver_opts:
       type: none
       o: bind
-      device: /home/kinamura/data/wordpress
-
+      device: ${HOME}/data/wordpress
   mariadb_data:
     driver: local
     driver_opts:
       type: none
       o: bind
-      device: /home/kinamura/data/mariadb
+      device: ${HOME}/data/mariadb
 
 networks:
-  inception:
+  default:
     driver: bridge
 
 secrets:

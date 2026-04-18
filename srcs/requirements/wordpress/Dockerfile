@@ -6,16 +6,14 @@ RUN apt update && apt install -y \
     curl \
     mariadb-client \
     netcat-openbsd \
-    && apt clean && rm -rf /var/lib/apt/lists/* \
     && mkdir -p /run/php \
     && mkdir -p /var/www/html
 
 RUN curl -O https://wordpress.org/wordpress-6.4.2.tar.gz \
     && tar -xzf wordpress-6.4.2.tar.gz \
-    && mv wordpress /var/www/html/wordpress-src \
+    && mv wordpress /var/www/html/ \
     && rm wordpress-6.4.2.tar.gz \
-    && chown -R www-data:www-data /var/www/html/wordpress-src \
-    && mkdir -p /var/www/html/wordpress
+    && chown -R www-data:www-data /var/www/html/wordpress
 
 # WP-CLI をインストール
 RUN curl -O https://raw.githubusercontent.com/wp-cli/builds/gh-pages/phar/wp-cli.phar \

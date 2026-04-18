@@ -1,19 +1,11 @@
 #!/bin/bash
-set -e
-
-# type: none volume starts empty — copy WordPress core files from staging
-if [ ! -f /var/www/html/wordpress/wp-login.php ]; then
-    echo "Initializing WordPress files in volume..."
-    cp -a /var/www/html/wordpress-src/. /var/www/html/wordpress/
-    chown -R www-data:www-data /var/www/html/wordpress
-fi
 
 cd /var/www/html/wordpress
 
-# Read secrets (strip trailing newlines)
-MYSQL_PASSWORD=$(cat /run/secrets/db_password | tr -d '\n')
-WP_ADMIN_PASSWORD=$(grep WP_ADMIN_PASSWORD /run/secrets/credentials | cut -d'=' -f2 | tr -d '\n')
-WP_USER_PASSWORD=$(grep WP_USER_PASSWORD /run/secrets/credentials | cut -d'=' -f2 | tr -d '\n')
+# secrets
+MYSQL_PASSWORD=$(cat /run/secrets/db_password)
+WP_ADMIN_PASSWORD=$(grep WP_ADMIN_PASSWORD /run/secrets/credentials | cut -d'=' -f2)
+WP_USER_PASSWORD=$(grep WP_USER_PASSWORD /run/secrets/credentials | cut -d'=' -f2)
 
 # wp-config.php
 if [ ! -f wp-config.php ]; then
@@ -33,23 +25,16 @@ if ( ! defined( 'ABSPATH' ) ) {
 require_once ABSPATH . 'wp-settings.php';
 EOF
     chown www-data:www-data wp-config.php
-    chmod 640 wp-config.php
+fi
 
-    # Wait for MariaDB (max 60 retries)
-    echo "Waiting for MariaDB to be ready..."
-    MAX_RETRIES=60
-    RETRY=0
-    while ! mysql -h "$MYSQL_HOST" -u "$MYSQL_USER" -p"$MYSQL_PASSWORD" -e "SELECT 1" > /dev/null 2>&1; do
-        RETRY=$((RETRY + 1))
-        if [ "$RETRY" -ge "$MAX_RETRIES" ]; then
-            echo "Error: MariaDB not ready after ${MAX_RETRIES} attempts"
-            exit 1
-        fi
-        echo "MariaDB not ready yet... ($RETRY/$MAX_RETRIES)"
-        sleep 2
-    done
-    echo "MariaDB is ready!"
+# MariaDB
+echo "Waiting for MariaDB to be ready..."
+while ! mysql -h "$MYSQL_HOST" -u "$MYSQL_USER" -p"$MYSQL_PASSWORD" -e "SELECT 1" > /dev/null 2>&1; do
+    sleep 2
+done
+echo "MariaDB is ready!"
 
+if ! wp core is-installed --allow-root; then
     # WordPress
     wp core install \
         --url="${DOMAIN_NAME}" \

@@ -53,7 +53,7 @@ endif
 
 #? Default Make
 .ONESHELL:
-all: | info build
+all: | info build up
 	@ELAPSED=$$(expr $$(date +%s 2>/dev/null || echo "0") - $(TIMESTAMP)); \
 	printf "\n\033[1;92mAll services up in \033[92m(\033[97m%dm:%02ds\033[92m)\033[0m\n" \
 	$$((ELAPSED / 60)) $$((ELAPSED % 60))
@@ -100,14 +100,16 @@ build: setup
 	@$(QUIET) || printf "\033[1;92mBuilding images\033[37m...\033[0m\n"
 	@$(VERBOSE) || printf "$(COMPOSE) $(COMPOSE_FLAGS) build\n"
 	@$(COMPOSE) $(COMPOSE_FLAGS) build || exit 1
-	@printf "\033[1;92m 33$(P) -> \033[1;37mimages built\033[0m\n"
+	@printf "\033[1;92mImages built.\033[0m\n"
+
+#? Start services
+.ONESHELL:
+up:
 	@$(QUIET) || printf "\033[1;92mStarting services\033[37m...\033[0m\n"
 	@$(VERBOSE) || printf "$(COMPOSE) $(COMPOSE_FLAGS) up -d\n"
 	@$(COMPOSE) $(COMPOSE_FLAGS) up -d $(SUPPRESS) || exit 1
-	@printf "\033[1;92m 66$(P) -> \033[1;37mservices started\033[0m\n"
-	@$(QUIET) || printf "\033[1;92mVerifying status\033[37m...\033[0m\n"
 	@$(COMPOSE) $(COMPOSE_FLAGS) ps $(SUPPRESS) || true
-	@printf "\033[1;92m100$(P) -> \033[1;37m$(NAME) ready \033[1;93m(\033[1;97m$(SERVICE_COUNT) services\033[1;93m)\033[0m\n"
+	@printf "\033[1;92m$(NAME) ready \033[1;93m(\033[1;97m$(SERVICE_COUNT) services\033[1;93m)\033[0m\n"
 
 #? Stop services
 down:
@@ -127,7 +129,7 @@ fclean: clean
 	@printf "\033[1;91mRemoving: \033[1;97mimages...\033[0m\n"
 	@$(COMPOSE) $(COMPOSE_FLAGS) down --rmi all $(SUPPRESS) || true
 	@printf "\033[1;91mPruning: \033[1;97munused Docker resources...\033[0m\n"
-	@$(DOCKER) system prune -f $(SUPPRESS) || true
+	@$(DOCKER) system prune -af $(SUPPRESS) || true
 	@printf "\033[1;92mFull clean complete.\033[0m\n"
 
 #? Rebuild
@@ -144,4 +146,4 @@ status:
 	@$(COMPOSE) $(COMPOSE_FLAGS) ps
 
 #? Non-File Targets
-.PHONY: all info help setup build down clean fclean re logs status
+.PHONY: all info help setup build up down clean fclean re logs status

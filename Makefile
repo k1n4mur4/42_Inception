@@ -30,10 +30,14 @@ ARCH		?= $(shell uname -m || echo unknown)
 ifeq ($(shell uname -s),Darwin)
 	PLATFORM	:= macOS
 	THREADS		:= $(shell sysctl -n hw.ncpu || echo 1)
+	DATA_DIR	:= $(HOME)/tmp/data
 else
 	PLATFORM	:= $(shell uname -s || echo unknown)
 	THREADS		:= $(shell getconf _NPROCESSORS_ONLN 2>/dev/null || echo 1)
+	DATA_DIR	:= /home/kinamura/data
 endif
+
+export DATA_DIR
 
 #? Setup
 SERVICE_COUNT	:= $(words $(SERVICES))
@@ -41,15 +45,10 @@ P		:= %%
 MAKEFLAGS	+= --no-print-directory
 
 ifeq ($(VERBOSE),true)
-	override VERBOSE := false
-else
-	override VERBOSE := true
-endif
-
-ifeq ($(VERBOSE),true)
-	override SUPPRESS := > /dev/null 2> /dev/null
-else
 	override SUPPRESS :=
+else
+	override VERBOSE := false
+	override SUPPRESS := > /dev/null 2> /dev/null
 endif
 
 #? Default Make
@@ -90,9 +89,14 @@ help:
 	@printf "  \033[1minfo\033[0m         Display build information\n"
 	@printf "  \033[1mhelp\033[0m         Show this help message\n"
 
+#? Create host directories for volumes
+setup:
+	@mkdir -p $(DATA_DIR)/wordpress
+	@mkdir -p $(DATA_DIR)/mariadb
+
 #? Build services
 .ONESHELL:
-build:
+build: setup
 	@$(QUIET) || printf "\033[1;92mBuilding images\033[37m...\033[0m\n"
 	@$(VERBOSE) || printf "$(COMPOSE) $(COMPOSE_FLAGS) build\n"
 	@$(COMPOSE) $(COMPOSE_FLAGS) build || exit 1
@@ -115,6 +119,7 @@ down:
 clean:
 	@printf "\033[1;91mRemoving: \033[1;97mservices and volumes...\033[0m\n"
 	@$(COMPOSE) $(COMPOSE_FLAGS) down -v $(SUPPRESS) || true
+	@sudo rm -rf $(DATA_DIR)
 	@printf "\033[1;92mClean complete.\033[0m\n"
 
 #? Full clean (volumes + images + prune)
@@ -139,4 +144,4 @@ status:
 	@$(COMPOSE) $(COMPOSE_FLAGS) ps
 
 #? Non-File Targets
-.PHONY: all info help build down clean fclean re logs status
+.PHONY: all info help setup build down clean fclean re logs status

@@ -187,3 +187,100 @@ Because MariaDB writes files as its own `mysql` user, some files in
 UID on the host. This is expected with bind-mounted volumes.
 
 ## Project Structure
+
+```
+.
+├── Makefile                    # Build orchestration (info/build/up/down/clean/fclean/re/logs/status)
+├── README.md
+├── USER_DOC.md
+├── DEV_DOC.md
+├── LICENSE
+├── .gitignore                  # Ignores secrets/, .env, *.sql, **/ssl/, *.key/*.crt/*.pem
+├── secrets/                    # NOT tracked; holds db_password.txt, db_root_password.txt, credentials.txt
+└── srcs/
+    ├── .env                    # NOT tracked; DOMAIN_NAME and non-secret Mysql/WP identifiers
+    ├── docker-compose.yml      # 3 services + 2 bind-mounted named volumes + inception network + 3 secrets
+    └── requirements/
+        ├── nginx/
+        │   ├── Dockerfile      # debian:bookworm; apt nginx+openssl; openssl req -x509 at build time
+        │   └── conf/
+        │       └── nginx.conf  # 443 only, TLSv1.2/1.3, fastcgi_pass wordpress:9000
+        ├── wordpress/
+        │   ├── Dockerfile      # debian:bookworm; php-fpm; wp-cli install; reads secrets/env
+        │   ├── conf/
+        │   │   └── www.conf    # php-fpm pool config (listen on 9000)
+        │   └── tools/
+        │       └── init.sh     # Entrypoint: wait for DB, wp core install, wp user create, exec php-fpm
+        └── mariadb/
+            ├── Dockerfile      # debian:bookworm; apt mariadb-server; custom entrypoint
+            └── tools/
+                └── init.sh     # Entrypoint: first-run init (user/DB/root pw), exec mysqld
+```
+
+## TLS Certificate
+
+NGINX generates a self-signed certificate at image build time inside
+`srcs/requirements/nginx/Dockerfile`:
+
+```
+openssl req -x509 -nodes -days 365 -newkey rsa:2048 \
+    -keyout /etc/nginx/ssl/nginx.key \
+    -out    /etc/nginx/ssl/nginx.crt \
+    -subj   "/C=JP/ST=Tokyo/L=Tokyo/O=42Tokyo/OU=kinamura/CN=kinamura.42.fr"
+```
+
+Key and certificate are never committed to Git (`**/ssl/`, `*.key`, `*.crt`,
+`*.pem` are gitignored). A fresh cert is created on every `make build`
+(and therefore on every `make re`).
+
+## Secrets
+
+All sensitive values are read at container start from files mounted by
+Docker secrets at `/run/secrets/<name>`:
+
+| Secret              | Consumers             | File                            |
+|---------------------|-----------------------|---------------------------------|
+| `db_password`       | mariadb, wordpress    | `secrets/db_password.txt`       |
+| `db_root_password`  | mariadb               | `secrets/db_root_password.txt`  |
+| `credentials`       | wordpress             | `secrets/credentials.txt`       |
+
+`credentials.txt` is a KEY=VALUE file containing `WP_ADMIN_PASSWORD=...` and
+`WP_USER_PASSWORD=...`. The `wordpress` entrypoint sources it and uses the
+values with `wp user create` / `wp user update`.
+
+No plaintext password appears in any Dockerfile, `docker-compose.yml`, or
+`*.conf`. The verification step
+`grep -rni password --include=Dockerfile --include='*.conf' srcs/` must
+remain empty.
+
+## Volumes and Data Directory
+
+The host directory `/home/kinamura/data/{wordpress,mariadb}` is created by
+the `setup` make target (called automatically by `build`). On macOS it is
+`$(HOME)/tmp/data/{wordpress,mariadb}` instead — note that the
+`docker-compose.yml` bind path is still `/home/kinamura/data/...`, so running
+the stack on macOS as-is will fail; this is intentional because the grading
+environment is the 42 Linux VM.
+
+The `make fclean` target runs `sudo rm -rf $(DATA_DIR)` so expect a sudo
+prompt during clean-up.
+
+## Makefile Internals
+
+- `VERBOSE=true make <target>` — show each `docker compose` command and leave
+  its stdout/stderr visible.
+- `QUIET=true make <target>` — skip the ANSI banner and per-phase notices.
+- Default is colored output with `docker compose` stdout/stderr suppressed.
+
+## Verification Checklist
+
+The following must all pass before submitting:
+
+```bash
+find . -name "*.sql"  -not -path "./.git/*"                              # empty
+find . \( -name "*.key" -o -name "*.pem" -o -name "*.crt" \) -not -path "./.git/*"  # empty
+grep -rni password --include=Dockerfile --include='*.conf' srcs/         # empty
+git check-ignore -v secrets/db_password.txt                              # hit
+make -n all                                                              # no error
+docker compose -f srcs/docker-compose.yml config                         # no error
+```

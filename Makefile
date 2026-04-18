@@ -121,13 +121,13 @@ down:
 clean:
 	@printf "\033[1;91mRemoving: \033[1;97mservices and volumes...\033[0m\n"
 	@$(COMPOSE) $(COMPOSE_FLAGS) down -v $(SUPPRESS) || true
-	@sudo rm -rf $(DATA_DIR)
 	@printf "\033[1;92mClean complete.\033[0m\n"
 
 #? Full clean (volumes + images + prune)
 fclean: clean
 	@printf "\033[1;91mRemoving: \033[1;97mimages...\033[0m\n"
 	@$(COMPOSE) $(COMPOSE_FLAGS) down --rmi all $(SUPPRESS) || true
+	@sudo rm -rf $(DATA_DIR)
 	@printf "\033[1;91mPruning: \033[1;97munused Docker resources...\033[0m\n"
 	@$(DOCKER) system prune -af $(SUPPRESS) || true
 	@printf "\033[1;92mFull clean complete.\033[0m\n"

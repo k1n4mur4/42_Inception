@@ -1,0 +1,12 @@
+# Prerequisites
+*.env
+*/.env
+*/*/.env
+*/*/*/.env
+
+*.secrets/*
+*/.secrets/*
+*/*/.secrets/*
+*/*/*/.secrets/*
+
+.vscode/

@@ -4,9 +4,9 @@
 */*/.env
 */*/*/.env
 
-*.secrets
-*/.secrets
-*/*/.secrets
-*/*/*/.secrets
+*.secrets/*
+*/.secrets/*
+*/*/.secrets/*
+*/*/*/.secrets/*
 
 .vscode/

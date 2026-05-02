@@ -1,12 +1,11 @@
 # Prerequisites
-*.env
-*/.env
-*/*/.env
-*/*/*/.env
-
-*.secrets/*
-*/.secrets/*
-*/*/.secrets/*
-*/*/*/.secrets/*
+.env
+secrets/
 
 .vscode/
+
+# macOS
+.DS_Store
+
+# Logs
+*.log

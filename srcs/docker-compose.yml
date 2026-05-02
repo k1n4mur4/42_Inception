@@ -1,0 +1,17 @@
+services:
+  nginx:
+    build: 
+      context: ./requirements/nginx/
+      args:
+        DOMAIN_NAME: ${DOMAIN_NAME}
+    container_name: nginx
+    image: nginx:inception
+    ports:
+      - "443:443"
+    networks:
+      - inception
+    restart: always
+
+networks:
+  inception:
+    driver: bridge

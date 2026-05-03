@@ -8,16 +8,17 @@ see `USER_DOC.md`.
 
 ```
 .
-├── Makefile                 ← build / run / clean orchestration
+├── Makefile                       ← orchestration entry point
 ├── README.md
 ├── USER_DOC.md
 ├── DEV_DOC.md
-├── secrets/                 ← Git-ignored, not part of the build context
+├── .gitignore                     ← ignores .env, secrets/, .vscode/, .DS_Store, *.log
+├── secrets/                       ← git-ignored, NOT part of any build context
 │   ├── credentials.txt
 │   ├── db_password.txt
 │   └── db_root_password.txt
 └── srcs/
-    ├── .env                 ← non-secret environment variables
+    ├── .env                       ← git-ignored, non-secret config
     ├── docker-compose.yml
     └── requirements/
         ├── nginx/
@@ -27,19 +28,19 @@ see `USER_DOC.md`.
         ├── mariadb/
         │   ├── Dockerfile
         │   └── tools/
-        │       └── init.sh
+        │       ├── init.sh        ← PID 1, idempotent first-boot init
+        │       └── init.sql       ← SQL template, placeholders rewritten by init.sh
         └── wordpress/
             ├── Dockerfile
             ├── conf/
-            │   └── www.conf      ← PHP-FPM pool configuration
+            │   └── www.conf       ← PHP-FPM pool configuration
             └── tools/
-                ├── init.sh
+                ├── init.sh        ← PID 1, idempotent first-boot init
                 └── wp-config.php  ← template, placeholders rewritten by init.sh
 ```
 
 Each service has its own folder under `srcs/requirements/`. The
-build context for `docker compose build <service>` is that folder,
-which keeps the per-service Dockerfile self-contained.
+build context for `docker compose build <service>` is that folder.
 
 ## Setting up from scratch
 
@@ -47,9 +48,8 @@ which keeps the per-service Dockerfile self-contained.
 
 On a Linux 42 VM (the supported target):
 
-- Docker Engine, including the `docker compose` plugin.
-- The user running `make` is in the `docker` group, or `make` is
-  invoked with `sudo`.
+- Docker Engine including the `docker compose` plugin.
+- The user running `make` is in the `docker` group.
 - `/etc/hosts` contains:
 
   ```
@@ -57,13 +57,12 @@ On a Linux 42 VM (the supported target):
   ```
 
 On macOS (development only): Docker Desktop installed and running.
-The `Makefile` detects macOS and sets `DATA_DIR` to
-`/Users/$(USER)/tmp/data` instead of `/home/$(USER)/data`.
+The `Makefile` detects macOS via `uname -s` and sets
+`DATA_DIR=$HOME/tmp/data` instead of `/home/kinamura/data`.
 
-### 2. Environment variables
+### 2. Environment variables (`srcs/.env`)
 
-Create `srcs/.env`. Below is the full list of variables expected
-by the stack, with safe example values:
+Create `srcs/.env` with the following keys:
 
 ```
 INTRA_NAME=kinamura
@@ -73,26 +72,27 @@ DOMAIN_NAME=kinamura.42.fr
 MYSQL_DATABASE=wordpress
 MYSQL_USER=wp_user
 
-# WordPress administrator (passwords are NOT here)
+# WordPress administrator (password is NOT here)
 # The login MUST NOT contain "admin" or "Admin".
 WP_ADMIN_USER=kinamura
 WP_ADMIN_EMAIL=kinamura@example.com
 
-# WordPress secondary user (passwords are NOT here)
+# WordPress secondary user (password is NOT here)
 WP_USER=sample
 WP_USER_EMAIL=sample@example.com
 ```
 
-The Makefile reads `INTRA_NAME` to build the host data directory
-path. `DOMAIN_NAME` is consumed by both the NGINX build (as a
-build-arg for the certificate's `CN`) and the WordPress runtime
+`DOMAIN_NAME` is consumed by both the NGINX build (as a
+`build-arg` for the certificate's `CN`) and the WordPress runtime
 (passed through `environment:` and used by `wp core install`).
+
+`INTRA_NAME` is recorded for documentation purposes; the host
+data path is currently fixed in the Makefile (see *How the named
+volumes end up under `/home/kinamura/data`* below).
 
 ### 3. Secrets
 
-Create three files under `secrets/`. They are mounted into
-containers as Docker secrets and read from `/run/secrets/<name>`
-inside the container.
+Create three files under `secrets/`:
 
 ```
 secrets/db_root_password.txt
@@ -101,7 +101,7 @@ secrets/credentials.txt
 ```
 
 `db_root_password.txt` and `db_password.txt` each contain a single
-password on a single line, with no trailing newline if possible.
+password (one line, no surrounding quotes).
 
 `credentials.txt` is a `KEY=VALUE` file:
 
@@ -110,50 +110,37 @@ WP_ADMIN_PASSWORD=<replace-me>
 WP_USER_PASSWORD=<replace-me>
 ```
 
-The WordPress `init.sh` reads it with `source /run/secrets/credentials`
+The WordPress `init.sh` reads it via `source /run/secrets/credentials`
 to populate `$WP_ADMIN_PASSWORD` and `$WP_USER_PASSWORD`.
 
-The `secrets/` directory is listed in `.gitignore` and is never
-copied into a Docker image. Committing real credentials to Git is a
-project failure per the subject.
+These files are mounted into containers as Docker secrets at
+`/run/secrets/<name>` and never copied into any image. The
+`secrets/` directory is listed in `.gitignore`. Committing real
+credentials to Git is a project failure per the subject.
 
 ## Building and launching
 
-### Building images
+The `Makefile` is the only intended entry point. It exports
+`DATA_DIR` before invoking `docker compose`, which is required
+because `docker-compose.yml` references `${DATA_DIR}` in volume
+declarations.
 
-```
-make build
-```
+### Targets
 
-(or `make` with no target, which builds and then starts.) Equivalent
-to:
-
-```
-docker compose -f srcs/docker-compose.yml build
-```
-
-The Makefile sets `DATA_DIR` and exports it before invoking Compose,
-which is required because `docker-compose.yml` references `${DATA_DIR}`
-in volume declarations.
-
-### Starting the stack
-
-```
-make
-```
-
-Equivalent to `make build` followed by `docker compose -f
-srcs/docker-compose.yml up -d`. The `setup` Make target ensures
-`/home/kinamura/data/{wordpress,mariadb}` exist before Compose tries
-to bind-mount them.
-
-### Following logs
-
-```
-docker logs -f wordpress
-docker logs -f mariadb
-docker logs -f nginx
-```
+| Target | Action |
+|---|---|
+| `all` (default) | `setup` + `build` + `up` + elapsed-time banner |
+| `setup` | `mkdir -p $(DATA_DIR)/{wordpress,mariadb}` |
+| `build` | `docker compose -f srcs/docker-compose.yml build` |
+| `up` | `docker compose ... up -d` |
+| `down` | `docker compose ... down` (containers + network) |
+| `clean` | `docker compose ... down -v` (volumes too) |
+| `fclean` | `clean` + remove all images + `sudo rm -rf $(DATA_DIR)` + `docker system prune -af` |
+| `re` | `fclean` then `all` |
+| `logs` | `docker compose ... logs -f` |
+| `status` | `docker compose ... ps` |
+| `info` | print resolved configuration |
+| `help` | list targets |
 
 ### Validating the Compose file
 
@@ -161,9 +148,10 @@ docker logs -f nginx
 docker compose -f srcs/docker-compose.yml config
 ```
 
-This expands all `${VAR}` references (warning if `DATA_DIR` is
-unset, which is normal when running `docker compose` directly
-instead of through `make`) and prints the effective configuration.
+Run this **after** `export DATA_DIR=/home/kinamura/data`, otherwise
+Compose warns that `DATA_DIR` is unset and substitutes an empty
+string — the warning is harmless when running through `make`,
+which exports `DATA_DIR` itself.
 
 ## Managing containers and volumes
 
@@ -171,26 +159,25 @@ instead of through `make`) and prints the effective configuration.
 
 ```
 docker compose -f srcs/docker-compose.yml ps              # status
-docker compose -f srcs/docker-compose.yml stop            # stop
-docker compose -f srcs/docker-compose.yml start           # start
+docker compose -f srcs/docker-compose.yml stop            # stop, keep
+docker compose -f srcs/docker-compose.yml start           # start again
 docker compose -f srcs/docker-compose.yml restart nginx   # restart one
-docker compose -f srcs/docker-compose.yml down            # stop + remove
 ```
 
-Or via the corresponding Make targets (`make down`, `make clean`,
-`make re`).
+The Makefile's `down`, `clean`, and `fclean` are the canonical
+ways to shut down.
 
 ### Inspecting a running container
 
 ```
-docker exec -it nginx     bash       # poke around in nginx
-docker exec -it wordpress bash       # poke around in WordPress / php-fpm
-docker exec -it mariadb   bash       # poke around in MariaDB
+docker exec -it nginx     bash       # nginx
+docker exec -it wordpress bash       # WordPress / php-fpm
+docker exec -it mariadb   bash       # MariaDB
 ```
 
-`docker inspect <container>` is the canonical way to confirm the
-network the container is attached to, the volumes it has mounted,
-and the entrypoint it ran with.
+`docker inspect <container>` confirms the network the container is
+attached to, the volumes it has mounted, and the entrypoint it
+ran with.
 
 ### Volume management
 
@@ -200,26 +187,27 @@ docker volume inspect srcs_wordpress_data
 docker volume inspect srcs_mariadb_data
 ```
 
-`docker volume inspect` should show a `device` field pointing at
+`docker volume inspect` shows a `device` field pointing at
 `/home/kinamura/data/wordpress` (or `/home/kinamura/data/mariadb`),
 which is what the subject requires.
 
-To list the WordPress files visible from the host:
+The host-side files are directly browsable:
 
 ```
 ls -la /home/kinamura/data/wordpress
+ls -la /home/kinamura/data/mariadb
 ```
 
-### Removing volumes
-
-`make fclean` removes containers, images, and the host directories
-backing the volumes. To remove the volumes themselves through
-Docker (rather than the host paths) without going through the
-Makefile:
+### Network management
 
 ```
-docker compose -f srcs/docker-compose.yml down -v
+docker network ls
+docker network inspect srcs_inception
 ```
+
+The `inception` network is a user-defined bridge. Containers
+resolve each other by service name through the network's embedded
+DNS.
 
 ## Where data lives
 
@@ -227,9 +215,11 @@ docker compose -f srcs/docker-compose.yml down -v
 |---|---|---|
 | WordPress files (themes, plugins, uploads, `wp-config.php`) | `/home/kinamura/data/wordpress/` | `/var/www/html/wordpress` (in both `wordpress` and `nginx`) |
 | MariaDB data files | `/home/kinamura/data/mariadb/` | `/var/lib/mysql` (in `mariadb`) |
-| Source tarball of WordPress 6.4.2 | inside the `wordpress` image at `/var/www/html/wordpress-src/` | copied to the volume on first boot |
+| WordPress 6.4.2 source | inside the `wordpress` image at `/var/www/html/wordpress-src/` | copied to the volume on first boot |
 | TLS certificate and key | inside the `nginx` image at `/etc/nginx/ssl/` | generated at build time |
 | Secrets | `secrets/*.txt` on host | `/run/secrets/<name>` (read-only `tmpfs`) |
+| `wp-config.php` template | inside the `wordpress` image at `/usr/local/share/wp-config.php` | rendered into volume on first boot |
+| `init.sql` template | inside the `mariadb` image at `/usr/local/share/init.sql` | rendered to `/tmp/init.sql`, run, deleted |
 
 ## How the named volumes end up under `/home/kinamura/data`
 
@@ -256,71 +246,76 @@ This is still a Docker named volume — it is listable through
 `docker volume ls`, inspectable through `docker volume inspect`,
 and deletable through `docker volume rm`. But its bytes are stored
 exactly where the subject demands: under `/home/kinamura/data` on
-the Linux VM, or `/Users/kinamura/tmp/data` in the macOS
-development setup. The Makefile chooses between the two based on
-the host OS, exports the result as `DATA_DIR`, and `setup` runs
-`mkdir -p` on it before Compose binds the directories.
+the Linux VM, or under `$HOME/tmp/data` in the macOS development
+setup. The Makefile chooses between the two based on the host OS,
+exports the result as `DATA_DIR`, and `setup` runs `mkdir -p` on
+it before Compose binds the directories.
 
 ## How initialisation works
 
-### MariaDB first boot
+### MariaDB first boot (`requirements/mariadb/tools/init.sh`)
 
-`requirements/mariadb/tools/init.sh` runs as the container's PID 1.
-On first boot the data directory does not yet contain the target
-database, so the script:
+`init.sh` is the container's PID 1. On first boot the data
+directory does not yet contain the target database, so the script:
 
 1. Reads the root and user passwords from `/run/secrets/`.
-2. Starts `mysqld` in the background.
+2. Starts `mysqld` in the background so the SQL client can talk
+   to it.
 3. Waits for `mysqladmin ping` to succeed.
-4. Creates the database, the WordPress user, grants privileges,
-   and sets the root password.
-5. Shuts that background `mysqld` down cleanly.
-6. `exec`s the foreground `mysqld --user=mysql --bind-address=0.0.0.0`
-   that becomes the container's main process.
+4. Copies `/usr/local/share/init.sql` to `/tmp/init.sql`,
+   rewrites the four `__...__` placeholders with `sed`, and runs
+   `mariadb -u root < /tmp/init.sql`. The SQL creates the
+   database, creates `wp_user@'%'`, grants privileges on the
+   WordPress DB, and sets the root password.
+5. Removes `/tmp/init.sql` so no plaintext password remains on
+   disk.
+6. Cleanly shuts the background `mysqld` down.
+7. `exec`s the foreground
+   `mysqld --user=mysql --bind-address=0.0.0.0`, which becomes
+   the container's PID 1.
 
-`--bind-address=0.0.0.0` is required so the WordPress container can
-reach MariaDB through the Docker network; the Debian default of
-`127.0.0.1` accepts only intra-container connections.
+`--bind-address=0.0.0.0` is required so the WordPress container
+can reach MariaDB through the Docker network; the Debian default
+of `127.0.0.1` accepts only intra-container connections.
 
-On subsequent boots the data directory already contains the database
-and the script skips the initialisation block, going straight to
+On subsequent boots the data directory already contains the
+database (`/var/lib/mysql/${MYSQL_DATABASE}` exists), the
+initialisation block is skipped, and the script jumps straight to
 `exec mysqld`.
 
-### WordPress first boot
+### WordPress first boot (`requirements/wordpress/tools/init.sh`)
 
-`requirements/wordpress/tools/init.sh` runs as the container's PID 1.
-It:
+`init.sh` is the container's PID 1. It:
 
 1. Reads `MYSQL_PASSWORD` from `/run/secrets/db_password` and
    `WP_ADMIN_PASSWORD` / `WP_USER_PASSWORD` from
    `/run/secrets/credentials` (sourced as a `KEY=VALUE` file).
 2. Waits for MariaDB to accept connections (`mariadb-admin ping
-   -h mariadb`).
+   -h "$MYSQL_HOST"`).
 3. If `wp-login.php` is absent on the volume, copies the
    WordPress 6.4.2 source tree from `/var/www/html/wordpress-src`
-   to `/var/www/html/wordpress` and fixes up file ownership and
+   to `/var/www/html/wordpress` and fixes ownership and
    permissions.
 4. If `wp-config.php` is absent, copies the template from
    `/usr/local/share/wp-config.php`, then `sed`s the four
    placeholders (`__DB_NAME__`, `__DB_USER__`, `__DB_PASSWORD__`,
-   `__DB_HOST__`) with their runtime values.
-5. Runs `wp core install` to seed the database and create the
-   administrator, then `wp user create` for the second user.
-   Both invocations pass `--path=/var/www/html/wordpress` and
-   `--allow-root`.
-6. `exec`s `php-fpm8.2 -F` as the container's main process.
+   `__DB_HOST__`) with their runtime values, then runs
+   `wp core install` (administrator) and `wp user create`
+   (second user). Both invocations pass
+   `--path=/var/www/html/wordpress` and `--allow-root`.
+5. `exec`s `php-fpm8.2 -F`, which becomes the container's PID 1.
 
-On subsequent boots the volume already has the WordPress files and
-`wp-config.php`, so the entire initialisation block is skipped and
-the script jumps straight to `exec php-fpm8.2 -F`.
+On subsequent boots the volume already has the WordPress files
+and `wp-config.php`, so the entire initialisation block is
+skipped and the script jumps straight to `exec php-fpm8.2 -F`.
 
 ## How NGINX reaches WordPress
 
 The `nginx.conf` `server` block sets `root` to
-`/var/www/html/wordpress`. A `location /` block uses `try_files
-$uri $uri/ /index.php?$args`, which is the standard WordPress
-permalink fallback. A `location ~ \.php$` block forwards PHP
-requests to `wordpress:9000` over FastCGI, with
+`/var/www/html/wordpress`. A `location /` block uses
+`try_files $uri $uri/ /index.php?$args`, which is the standard
+WordPress permalink fallback. A `location ~ \.php$` block forwards
+PHP requests to `wordpress:9000` over FastCGI, with
 `fastcgi_param SCRIPT_FILENAME $document_root$fastcgi_script_name`.
 
 For `SCRIPT_FILENAME` to resolve to a real file inside the
@@ -337,19 +332,19 @@ Edit `srcs/requirements/wordpress/Dockerfile`: bump
 download URL and in the `tar -xzf` line. Then:
 
 ```
-make fclean && make
+make re
 ```
 
-`fclean` is required because the existing volume already contains
-the old version's files.
+`re` is required because the existing volume already contains the
+old version's files.
 
 ### Changing PHP-FPM tuning
 
 Edit `srcs/requirements/wordpress/conf/www.conf` and rebuild the
 `wordpress` image. The pool name `[www]`, `listen = 0.0.0.0:9000`,
-and the `pm = dynamic` directive are required for the rest of the
-stack to keep working; the `pm.max_children` and friends can be
-tuned freely.
+and the `pm = dynamic` directive are required for the rest of
+the stack to keep working; the `pm.max_children` and friends can
+be tuned freely.
 
 ### Changing the TLS configuration
 
@@ -357,7 +352,14 @@ Edit `srcs/requirements/nginx/conf/nginx.conf` to adjust
 `ssl_protocols`, `ssl_ciphers`, etc. The certificate itself is
 generated by the NGINX Dockerfile's `openssl req` line and uses
 `${DOMAIN_NAME}` (passed via `ARG`) as the `CN`. Rebuild with
-`docker compose build nginx`.
+`docker compose -f srcs/docker-compose.yml build nginx` (or
+`make build`).
+
+### Changing the bootstrap SQL
+
+Edit `srcs/requirements/mariadb/tools/init.sql`. Existing
+placeholders may be reused; new placeholders must be added to
+the `sed` block in `mariadb/tools/init.sh`. Then `make re`.
 
 ### Resetting the WordPress installation only
 
@@ -367,4 +369,22 @@ sudo rm -rf /home/kinamura/data/wordpress/*
 make
 ```
 
-(Or `make fclean && make` for a full reset including the database.)
+The MariaDB volume is preserved, but WordPress is reinstalled
+from scratch. Note that this leaves the database with the old
+WordPress tables; for a clean state, prefer `make re` (or
+`make clean && make`).
+
+## CI / sanity checks
+
+A few quick post-build checks worth running:
+
+```
+make status                                      # 3 containers Up
+docker compose -f srcs/docker-compose.yml config # YAML valid
+docker network ls | grep srcs_inception          # network exists
+docker volume ls  | grep srcs_                   # both volumes exist
+docker exec mariadb mariadb -u root \
+  -p"$(cat secrets/db_root_password.txt)" \
+  -e "SHOW DATABASES;"                           # wordpress DB exists
+curl -k https://kinamura.42.fr | grep '<title>'  # title is "Inception"
+```

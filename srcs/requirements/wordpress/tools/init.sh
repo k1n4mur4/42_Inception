@@ -40,7 +40,6 @@ if [ ! -f "/var/www/html/wordpress/wp-config.php" ]; then
 		--user_pass=${WP_USER_PASSWORD} \
 		--role=editor \
 		--allow-root \
-		--skip-email \
 		--path=/var/www/html/wordpress
 
 	

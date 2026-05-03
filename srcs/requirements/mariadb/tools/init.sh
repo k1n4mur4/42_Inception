@@ -11,16 +11,17 @@ if [ ! -d /var/lib/mysql/${MYSQL_DATABASE} ]; then
 		sleep 1
 	done
 
-	mariadb -u root <<EOF
-CREATE DATABASE IF NOT EXISTS ${MYSQL_DATABASE};
-CREATE USER IF NOT EXISTS '${MYSQL_USER}'@'%' IDENTIFIED BY '${MYSQL_PASSWORD}';
-GRANT ALL PRIVILEGES ON ${MYSQL_DATABASE}.* TO '${MYSQL_USER}'@'%';
-ALTER USER 'root'@'localhost' IDENTIFIED BY '${MYSQL_ROOT_PASSWORD}';
-FLUSH PRIVILEGES;
-EOF
+	cp /usr/local/share/init.sql /tmp/init.sql
+	sed -i "s|__DB_NAME__|${MYSQL_DATABASE}|g" /tmp/init.sql
+	sed -i "s|__DB_USER__|${MYSQL_USER}|g" /tmp/init.sql
+	sed -i "s|__DB_PASSWORD__|${MYSQL_PASSWORD}|g" /tmp/init.sql
+	sed -i "s|__DB_ROOT_PASSWORD__|${MYSQL_ROOT_PASSWORD}|g" /tmp/init.sql
+
+	mariadb -u root < /tmp/init.sql
+
+	rm /tmp/init.sql
 
 	mysqladmin -u root -p"${MYSQL_ROOT_PASSWORD}" shutdown
 fi
 
-# b: 本番起動 (PID 1)
 exec mysqld --user=mysql --bind-address=0.0.0.0

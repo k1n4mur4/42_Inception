@@ -6,6 +6,7 @@ RUN apt-get update \
 	&& mkdir -p /run/mysqld \
 	&& chown mysql:mysql /run/mysqld
 
+COPY tools/init.sql /usr/local/share/init.sql
 COPY tools/init.sh /usr/local/bin/
 RUN chmod +x /usr/local/bin/init.sh
 

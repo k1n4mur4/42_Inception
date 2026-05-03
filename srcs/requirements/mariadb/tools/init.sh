@@ -23,4 +23,4 @@ EOF
 fi
 
 # b: 本番起動 (PID 1)
-exec mysqld --user=mysql
+exec mysqld --user=mysql --bind-address=0.0.0.0
